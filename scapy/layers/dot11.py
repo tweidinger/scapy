@@ -664,6 +664,9 @@ _dot11_addr_meaning = [
 ]
 
 
+
+
+
 class _Dot11MacField(MACField):
     """
     A MACField that displays the address type depending on the
@@ -1614,6 +1617,102 @@ class Dot11CCMP(Dot11Encrypted):
         StrField("data", None),
     ]
 
+##############
+# 802.11 FTM #
+##############
+
+# TODO: Action, Public Action, FTM Request subtype, parsing the request, FTM data header, parsing the data 
+
+action_category = {0: "Spectrum-Management", 1: "QoS", 2: "DLS",
+                3: "Block-Ack",
+                4: "Public", 5: "Radio-Measurement", 6: "Fast-BSS-Transition",
+                7: "HT", 8: "SA-Query",
+                9: "Protected-Dult-Of-Public-Action", 10: "WNM", 11: "Unprotected-WNM",
+                12: "TDLS", 13: "Mesh", 14: "MultiHop", 15: "Self-Protected",
+                16: "Reserved", 17: "Reserved-WFA", 126: "Vendor-specific-Protected",
+                127: "Vendor-specific", 128: "Error", 255: "Error"}
+
+spec_mgmt_act_field = {0: "Meas-Req", 1: "Meas-Report", 2: "TPC-Req",
+               3: "TPC_Report", 4: "Chan-Switch-Announcement", 5: "reserved"}
+
+radio_meas_act_field = {0: "Radio-meas-Req", 1: "Radio-meas-Report", 2: "Link-meas-Req",
+               3: "Link-meas-report", 4: "Neigh-Report-Req", 5: "Neigh-Report-Resp",
+               6: "reserved"}
+
+public_act_field = { 32: "Fine-Timing-Measurement-Request", 33: "Fine-Timing-Measurement"}
+
+# Public action is a subtype of action 
+# FTM request is subtype public action (13)9602 and public action type is 20
+# 
+class Dot11Action(_Dot11EltUtils):
+    name = "802.11 Action"
+    fields_desc = [ByteEnumField("category", 4, action_category),
+    ConditionalField(
+            ByteEnumField("public_act_field", 32, public_act_field),
+            lambda pkt: pkt.category == 4)
+    ]
+
+###
+# Category (1 Octet) | Public Action (1 Octet) | Trigger (1 Octet) |
+# LCI Measurement Request (optional) (variable)| Location Civic Measurement Request (optional) (variable) |
+# Fine Timing Measuurement Parameters (optional) (variable)
+###
+class Dot11FTMRequest(Packet):
+    name = "Fine Timing measurement request packet"
+    fields_desc = [
+        # MACField("Peer_STA_Address", "00:00:00:00:00"),
+        IntField("Trigger",0)
+    ]
+
+### FTM Packet
+# Category (1 Octet) | Public Action (1 Octet) | Dialog Token (1 Octet) |
+# Follow up Dialog Token (1 Octet) | TOD (6 Octet) | TOA (6 Octet) |
+# TOD Error (2 Octet) | TOA Error (2 Octet) |
+# LCI Report (optional) (variable)| Location Civic Report (optional) (variable) |
+# Fine Timing Measurement Parameters (optional) (variable) |
+# Fine Timing Measurement Synchronization Information (optional) (variable)
+###
+
+### TOD Error Field
+# Max TOD Error Exponent (5 Bits) | Reserved (10 Bits) | TOD Not Continuous (1 Bits)
+###
+
+### TOA Error Field
+# Max TOA Error Exponent (5 Bits) | Reserved (11 Bits)
+###
+
+### LCI Report
+# LCI Subelement (Octets 2 or 18) | Optional Subelements (variable)
+###
+
+### LCI Subelement IDs
+# 0 LCI
+# 1 Azimuth Report
+# 2 Originator Requesting STA MAC Address
+# 3 Target MAC Address
+# 4 Z
+# 5 Relative Location Error
+# 5 Usage Rules/Policy
+# 7 Co-Located BSSID List
+# 8-220 Reserved
+# 221 Vendor Specific
+# 222-255 Reserved
+###
+
+### LCI Subelement
+# Subelelent ID (1 Octet) | Length (1 Octet) | LCI field (optional) (0 or 16 Octet)
+###
+
+### LCI Field
+# Latitude Uncertainty (6 Bits) | Latitude (34 Bits) | Longitude Uncertainty (6 Bits)
+###
+class Dot11FTM(Packet):
+    name = "Fine Timing measurement packet"
+    fields_desc = [
+        # MACField("Peer_STA_Address", "00:00:00:00:00"),
+        IntField("Trigger",0)
+    ]
+##############
 
 ############
 # Bindings #
@@ -1637,6 +1736,7 @@ bind_layers(Dot11, Dot11ATIM, subtype=9, type=0)
 bind_layers(Dot11, Dot11Disas, subtype=10, type=0)
 bind_layers(Dot11, Dot11Auth, subtype=11, type=0)
 bind_layers(Dot11, Dot11Deauth, subtype=12, type=0)
+bind_layers(Dot11, Dot11Action, subtype=13, type=0)
 bind_layers(Dot11, Dot11Ack, subtype=13, type=1)
 bind_layers(Dot11Beacon, Dot11Elt,)
 bind_layers(Dot11AssoReq, Dot11Elt,)
