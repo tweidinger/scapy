@@ -92,6 +92,19 @@ assert isinstance(a, IKEv2_payload_CERT_CRL)
 assert isinstance(b, IKEv2_payload_CERT_STR)
 assert isinstance(c, IKEv2_payload_CERT_CRT)
 
+= Test Certs length calculations
+## For the length calculations see Figure 12 in RFC 7296
+a = IKEv2_payload_CERT_CRT(raw(IKEv2_payload_CERT_CRT()))
+assert len(a.x509Cert) > 0
+assert a.length == len(a.x509Cert) + 5
+
+b = IKEv2_payload_CERT_CRL(raw(IKEv2_payload_CERT_CRL()))
+assert len(b.x509CRL) > 0
+assert b.length == len(b.x509CRL) + 5
+
+c = IKEv2_payload_CERT_STR(raw(IKEv2_payload_CERT_STR(cert_data=b'dummy')))
+assert c.length == len(c.cert_data) + 5
+
 = Test TrafficSelector detection
 
 a = TrafficSelector(raw(IPv4TrafficSelector()))
@@ -101,6 +114,26 @@ c = TrafficSelector(raw(EncryptedTrafficSelector()))
 assert isinstance(a, IPv4TrafficSelector)
 assert isinstance(b, IPv6TrafficSelector)
 assert isinstance(c, EncryptedTrafficSelector)
+
+= Test TSi with multiple TrafficSelector dissection
+
+a = IKEv2_payload_TSi()
+a.traffic_selector.extend(IPv4TrafficSelector() * 2)
+a.traffic_selector.extend(IPv6TrafficSelector() * 3)
+assert len(a.traffic_selector) == 5
+
+b = IKEv2_payload_TSi(raw(a))
+assert len(b.traffic_selector) == 5
+
+= Test automatic calculation of number_of_TSs field
+
+a = IKEv2_payload_TSi(traffic_selector=IPv4TrafficSelector() * 2)
+b = IKEv2_payload_TSi(raw(a))
+assert b.number_of_TSs == 2
+
+c = IKEv2_payload_TSr(traffic_selector=IPv4TrafficSelector() * 2)
+d = IKEv2_payload_TSr(raw(c))
+assert d.number_of_TSs == 2
 
 = IKEv2_payload_Encrypted_Fragment, simple tests
 

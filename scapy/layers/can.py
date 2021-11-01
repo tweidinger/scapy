@@ -74,7 +74,7 @@ class CAN(Packet):
     the wire is given by the length field. To obtain only the CAN frame from
     the wire, this additional padding has to be removed. Nevertheless, for
     corner cases, it might be useful to also get the padding. This can be
-    configuered through the **remove-padding** configuration.
+    configured through the **remove-padding** configuration.
 
     Truncate CAN frame based on length field:
         >>> conf.contribs['CAN']['remove-padding'] = True
@@ -614,6 +614,11 @@ class CandumpReader:
         """Emulation of SuperSocket"""
         return self.f.fileno()
 
+    @property
+    def closed(self):
+        # type: () -> bool
+        return self.f.closed
+
     def close(self):
         # type: () -> Any
         """Emulation of SuperSocket"""
@@ -631,4 +636,5 @@ class CandumpReader:
     def select(sockets, remain=None):
         # type: (List[SuperSocket], Optional[int]) -> List[SuperSocket]
         """Emulation of SuperSocket"""
-        return sockets
+        return [s for s in sockets if isinstance(s, CandumpReader) and
+                not s.closed]

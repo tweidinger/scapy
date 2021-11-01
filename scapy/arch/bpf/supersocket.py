@@ -11,6 +11,7 @@ import os
 import platform
 from select import select
 import struct
+import sys
 import time
 
 from scapy.arch.bpf.core import get_dev_bpf, attach_filter
@@ -24,7 +25,6 @@ from scapy.error import Scapy_Exception, warning
 from scapy.interfaces import network_name
 from scapy.supersocket import SuperSocket
 from scapy.compat import raw
-from scapy.layers.l2 import Loopback
 
 
 if FREEBSD:
@@ -84,12 +84,27 @@ class _L2bpfSocket(SuperSocket):
         # Note: - trick from libpcap/pcap-bpf.c - monitor_mode()
         #       - it only works on OS X 10.5 and later
         if DARWIN and monitor:
-            dlt_radiotap = struct.pack('I', DLT_IEEE802_11_RADIO)
+            # Convert macOS version to an integer
             try:
-                fcntl.ioctl(self.ins, BIOCSDLT, dlt_radiotap)
-            except IOError:
-                raise Scapy_Exception("Can't set %s into monitor mode!" %
-                                      self.iface)
+                tmp_mac_version = platform.mac_ver()[0].split(".")
+                tmp_mac_version = [int(num) for num in tmp_mac_version]
+                macos_version = tmp_mac_version[0] * 10000
+                macos_version += tmp_mac_version[1] * 100 + tmp_mac_version[2]
+            except (IndexError, ValueError):
+                warning("Could not determine your macOS version!")
+                macos_version = sys.maxint
+
+            # Disable 802.11 monitoring on macOS Catalina (aka 10.15) and upper
+            if macos_version < 101500:
+                dlt_radiotap = struct.pack('I', DLT_IEEE802_11_RADIO)
+                try:
+                    fcntl.ioctl(self.ins, BIOCSDLT, dlt_radiotap)
+                except IOError:
+                    raise Scapy_Exception("Can't set %s into monitor mode!" %
+                                          self.iface)
+            else:
+                warning("Scapy won't activate 802.11 monitoring, "
+                        "as it will crash your macOS kernel!")
 
         # Don't block on read
         try:
@@ -375,11 +390,12 @@ class L3bpfSocket(L2bpfSocket):
 
     def send(self, pkt):
         """Send a packet"""
+        from scapy.layers.l2 import Loopback
 
         # Use the routing table to find the output interface
         iff = pkt.route()[0]
         if iff is None:
-            iff = conf.iface
+            iff = network_name(conf.iface)
 
         # Assign the network interface to the BPF handle
         if self.assigned_interface != iff:
@@ -390,14 +406,31 @@ class L3bpfSocket(L2bpfSocket):
             self.assigned_interface = iff
 
         # Build the frame
-        if self.guessed_cls == Loopback:
-            # bpf(4) man page (from macOS, but also for BSD):
-            # "A packet can be sent out on the network by writing to a bpf
-            # file descriptor. [...] Currently only writes to Ethernets and
-            # SLIP links are supported"
-            #
-            # Headers are only mentioned for reads, not writes. tuntaposx's tun
-            # device reports as a "loopback" device, but it does IP.
+        #
+        # LINKTYPE_NULL / DLT_NULL (Loopback) is a special case. From the
+        # bpf(4) man page (from macOS/Darwin, but also for BSD):
+        #
+        # "A packet can be sent out on the network by writing to a bpf file
+        # descriptor. [...] Currently only writes to Ethernets and SLIP links
+        # are supported."
+        #
+        # Headers are only mentioned for reads, not writes, and it has the
+        # name "NULL" and id=0.
+        #
+        # The _correct_ behaviour appears to be that one should add a BSD
+        # Loopback header to every sent packet. This is needed by FreeBSD's
+        # if_lo, and Darwin's if_lo & if_utun.
+        #
+        # tuntaposx appears to have interpreted "NULL" as "no headers".
+        # Thankfully its interfaces have a different name (tunX) to Darwin's
+        # if_utun interfaces (utunX).
+        #
+        # There might be other drivers which make the same mistake as
+        # tuntaposx, but these are typically provided with VPN software, and
+        # Apple are breaking these kexts in a future version of macOS... so
+        # the problem will eventually go away. They already don't work on Macs
+        # with Apple Silicon (M1).
+        if DARWIN and iff.startswith('tun') and self.guessed_cls == Loopback:
             frame = raw(pkt)
         else:
             frame = raw(self.guessed_cls() / pkt)

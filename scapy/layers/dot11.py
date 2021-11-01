@@ -62,6 +62,7 @@ from scapy.fields import (
     StrLenField,
     XByteField,
     XStrFixedLenField,
+    Field
 )
 from scapy.ansmachine import AnsweringMachine
 from scapy.plist import PacketList
@@ -1924,7 +1925,7 @@ format_and_bandwith = {
     32 - 63: "Reserved",
 }
 
-measurement_type = {11: "Location-Civic", 16: "Fine-Timing-Measurement-Range"}
+measurement_type = {8: "LCI", 11: "Location-Civic", 16: "Fine-Timing-Measurement-Range"}
 
 location_subject = {
     0: "Location-Subject-Local",
@@ -1953,7 +1954,7 @@ civic_location_subelements = {
 # Public action is a subtype of action
 # FTM request is subtype public action (13)9602 and public action type is 20
 #
-class Dot11Action(_Dot11EltUtils):
+class Dot11PublicAction(_Dot11EltUtils):
     name = "802.11 Action"
     fields_desc = [
         ByteEnumField("category", 4, action_category),
@@ -1965,34 +1966,29 @@ class Dot11Action(_Dot11EltUtils):
     ]
 
 
-class Dot11SubElement(Dot11Action):
-    name = "802.11 Subelement"
+
+class Dot11FTM(Dot11PublicAction):
+    name = "802.11 Action"
+
+class Dot11FTMMeasurementRequestField(Field):
     fields_desc = [
-        ByteField("Subelement-ID", 0),
-        ByteField("Length", 0),
-        # TODO: Variable Length Data
+        # LCI
+        ByteField("element_id", 0),
+        ByteField("length", 0),
+        ByteField("token", 0),
+        ByteField("request_mode", 0),
+        ByteEnumField("measurement_type", 0, measurement_type),
     ]
 
 
-class Dot11FTM(Dot11Action):
-    name = "802.11 Action"
-
-
-class Dot11FTMMeasurementRequestFrame(Dot11Action):
-    name = "Fine Timing measurement request frame"
+class LCIRequestField(Field):
     fields_desc = [
-        ByteField("Element-ID", 0),
-        ByteField("Length", 0),
-        ByteField("Measurement-Token", 0),
-        ByteField("Measurement-Request-Mode", 0),
-        ByteEnumField("Measurement-Type", 0, measurement_type),
-        # LCI
         ByteEnumField("LCI-Location-Subject", 0, location_subject),
-        # Location Civic
-        ByteField("Civic-Element-ID", 0),
-        ByteField("Civic-Length", 0),
-        ByteField("Civic-Measurement-Token", 0),
-        ByteField("Civic-Measurement-Request-Mode", 0),
+        # TODO: parse optional sub data
+    ]
+
+class LocationCivicRequestField(Field):
+    fields_desc = [
         ByteEnumField("Civic-Measurement-Type", 0, measurement_type),
         ByteEnumField("Civic-Location-Subject", 0, location_subject),
         ByteEnumField("Civic-Location-Type", 0, civic_location_type),
@@ -2000,11 +1996,10 @@ class Dot11FTMMeasurementRequestFrame(Dot11Action):
             "Location-Service-Interval-Units", 0, civic_location_interval_units
         ),
         BitField("Location-Service-Interval", 0, 16),
-        # TODO: FIX STUPID ALIGNMENT
-        # optional-variable-length-subelements
-        #  ByteField("Civic-Optional-Subelement", 0),
+    ]
 
-        # FTM Parameters
+class FTMParameterField(Field):
+    fields_desc = [
         ByteField("Parameters-Element-ID", 0),
         ByteField("Parameters-Length", 0),
         # FTM Parameters Subset 1
@@ -2026,67 +2021,83 @@ class Dot11FTMMeasurementRequestFrame(Dot11Action):
         BitField("Burst-Period", 0, 16, tot_size=-3),
         BitEnumField("Format-and-Bandwith", 0, 6, format_and_bandwith),
         BitField("Reserved2", 0, 2, end_tot_size=-3),
+
+
+    ]
+
+class Dot11FTMMeasurementRequestFrame(Dot11PublicAction):
+    name = "Fine Timing measurement request frame"
+    fields_desc = [
+        # LCI
+        # ByteField("Element-ID", 0),
+        # ByteField("Length", 0),
+        # ByteField("Measurement-Token", 0),
+        # ByteField("Measurement-Request-Mode", 0),
+        # ByteEnumField("Measurement-Type", 0, measurement_type),
+
+        Dot11FTMMeasurementRequestField("MeasurementRequestField",None),
+        LCIRequestField("lci_data", None),
+        Dot11FTMMeasurementRequestField("MeasurementRequestField",None),
+        LocationCivicRequestField("location_civic_data")
         # Vendor Specific
         ByteField("Vendor-Element-ID", 0),
         ByteField("Vendor-Length", 0),
+
+        # ByteEnumField("LCI-Location-Subject", 0, location_subject),
+        # TODO: Figure out data/optional data
+
+        # Location Civic
+        # ByteField("Civic-Element-ID", 0),
+        # ByteField("Civic-Length", 0),
+        # ByteField("Civic-Measurement-Token", 0),
+        # ByteField("Civic-Measurement-Request-Mode", 0),
+        # ByteEnumField("Civic-Measurement-Type", 0, measurement_type),
+        # ByteEnumField("Civic-Location-Subject", 0, location_subject),
+        # ByteEnumField("Civic-Location-Type", 0, civic_location_type),
+        # ByteEnumField(
+        #     "Location-Service-Interval-Units", 0, civic_location_interval_units
+        # ),
+        # BitField("Location-Service-Interval", 0, 16),
+
+        # # FTM Parameters
+        # ByteField("Parameters-Element-ID", 0),
+        # ByteField("Parameters-Length", 0),
+        # # FTM Parameters Subset 1
+        # BitEnumField(
+        #     "Burst-Duration", 0, 4, burst_duration_field_encoding, tot_size=-2
+        # ),
+        # BitField("Number-of-Bursts-Exponent", 0, 4),
+        # BitField("Reserved1", 0, 1),
+        # BitField("Value", 0, 5),
+        # BitEnumField("Status-Indication", 0, 2, ftm_status_indication, end_tot_size=-2),
+        # # FTM Parameters Subset 2
+        # BitField("FTMS-per-Burst", 0, 5, tot_size=-4),
+        # BitField("ASAP", 0, 1),
+        # BitField("ASAP-Capable", 0, 1),
+        # BitField("Partial-TSF-Timer-No-Preference", 0, 1),
+        # BitField("Partial-TSF-Timer", 0, 16),
+        # BitField("Min-Delta-FTM", 0, 8, end_tot_size=-4),
+        # # FTM Parameters Subset 3
+        # BitField("Burst-Period", 0, 16, tot_size=-3),
+        # BitEnumField("Format-and-Bandwith", 0, 6, format_and_bandwith),
+        # BitField("Reserved2", 0, 2, end_tot_size=-3),
+
+        # # Vendor Specific
+        # ByteField("Vendor-Element-ID", 0),
+        # ByteField("Vendor-Length", 0),
     ]
 
-
-class Dot11FTMLCIMeasurementRequest(Dot11FTMMeasurementRequestFrame):
-    name = "Fine Timing measurement LCI request"
-    fields_desc = [
-        ByteEnumField("Location-Subject", 0, location_subject),
-        # TODO: variable length usb elements
-        # conditional field
-    ]
-
-
-class Dot11FTMLocationCivicMeasurementRequest(Dot11FTMMeasurementRequestFrame):
-    name = "Fine Timing measurement Location Civic request"
-    fields_desc = [
-        ByteEnumField("Location-Subject", 0, location_subject),
-        ByteEnumField("Civic-Location-Type", 0, civic_location_type),
-        ByteEnumField(
-            "Location-Service-Interval-Units", 0, civic_location_interval_units
-        ),
-        BitEnumField("Location-Service-Interval", 0, 16, location_subject),
-        # TODO: optional variable length usb elements
-    ]
-
-
-class Dot11FTMRequestMode(Dot11Action):
-    name = "Fine Timing LCI measurement request"
-    fields_desc = [
-        BitField("Parallel", 0, 1),
-        BitField("Enable", 0, 1),
-        BitField("Request", 0, 1),
-        BitField("Report", 0, 1),
-        BitField("Duration-Mandatory", 0, 1),
-        BitField("Reserved", 0, 3),
-    ]
-
-
-class Dot11FTMParameter(Dot11FTMMeasurementRequestFrame):
-    name = "Fine Timing measurement Parameter"
-    fields_desc = [
-        BitEnumField("Status-Indication", 0, 2, ftm_status_indication),
-        BitField("Value", 0, 5),
-        BitField("Reserved1", 0, 1),
-        BitField("Number-of-Bursts-Exponent", 0, 4),
-        BitEnumField("Burst-Duration", 0, 4, burst_duration_field_encoding),
-        BitField("Min-Delta-FTM", 0, 8),
-        BitField("Partial-TSF-Timer", 0, 16),
-        BitField("Partial-TSF-Timer-No-Reference", 0, 1),
-        BitField("ASAP-Capable", 0, 1),
-        BitField("ASAP", 0, 1),
-        BitField("FTMS-per-Burst", 0, 5),
-        BitField("Reserved2", 0, 2),
-        BitEnumField("Format-and-Bandwith", 0, 6, format_and_bandwith),
-        BitField("Burst-Period", 0, 16),
-        MACField("STA_Address", "00:00:00:00:00"),
-        MACField("Target_AP_Address", "00:00:00:00:00"),
-    ]
-
+#    # TODO: implement this as a field
+# class Dot11FTMRequestMode(Dot11PublicAction):
+#     name = "Fine Timing LCI measurement request"
+#     fields_desc = [
+#         BitField("Parallel", 0, 1),
+#         BitField("Enable", 0, 1),
+#         BitField("Request", 0, 1),
+#         BitField("Report", 0, 1),
+#         BitField("Duration-Mandatory", 0, 1),
+#         BitField("Reserved", 0, 3),
+#     ]
 
 ### FTM Packet
 # Category (1 Octet) | Public Action (1 Octet) | Dialog Token (1 Octet) |
@@ -2159,7 +2170,7 @@ bind_layers(Dot11, Dot11ATIM, subtype=9, type=0)
 bind_layers(Dot11, Dot11Disas, subtype=10, type=0)
 bind_layers(Dot11, Dot11Auth, subtype=11, type=0)
 bind_layers(Dot11, Dot11Deauth, subtype=12, type=0)
-bind_layers(Dot11, Dot11Action, subtype=13, type=0)
+bind_layers(Dot11, Dot11PublicAction, subtype=13, type=0)
 bind_layers(Dot11, Dot11Ack, subtype=13, type=1)
 bind_layers(Dot11Beacon, Dot11Elt)
 bind_layers(Dot11AssoReq, Dot11Elt)
@@ -2174,7 +2185,7 @@ bind_layers(Dot11TKIP, conf.raw_layer)
 bind_layers(Dot11CCMP, conf.raw_layer)
 
 # parse all public actions with action type to measurement request frame
-bind_layers(Dot11Action, Dot11FTMMeasurementRequestFrame, public_act_field=32)
+bind_layers(Dot11PublicAction, Dot11FTMMeasurementRequestFrame, public_act_field=32)
 
 # bind_layers(Dot11FTMLCIMeasurementRequest, Dot11FTMLocationCivicMeasurementRequest,has_optional_data=True)
 # bind_layers(Dot11FTMLocationCivicMeasurementRequest, Dot11FTMParameter,has_optional_data=True)

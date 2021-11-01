@@ -24,10 +24,10 @@ PNIO RPC endpoints
 import struct
 from uuid import UUID
 
-from scapy.packet import Packet, bind_layers
+from scapy.packet import Packet, Raw, bind_layers
 from scapy.config import conf
-from scapy.fields import BitField, ByteField, BitEnumField, ConditionalField, \
-    FieldLenField, FieldListField, IntField, IntEnumField, \
+from scapy.fields import BitField, ByteField, BitEnumField, ByteEnumField, \
+    ConditionalField, FieldLenField, FieldListField, IntField, IntEnumField, \
     LenField, MACField, PadField, PacketField, PacketListField, \
     ShortEnumField, ShortField, StrFixedLenField, StrLenField, \
     UUIDField, XByteField, XIntField, XShortEnumField, XShortField
@@ -37,8 +37,8 @@ from scapy.volatile import RandUUID
 
 # Block Packet
 BLOCK_TYPES_ENUM = {
-    0x0000: "AlarmNotification_High",
-    0x0001: "AlarmNotification_Low",
+    0x0001: "AlarmNotification_High",
+    0x0002: "AlarmNotification_Low",
     0x0008: "IODWriteReqHeader",
     0x0009: "IODReadReqHeader",
     0x0010: "DiagnosisData",
@@ -626,6 +626,76 @@ class IODWriteMultipleRes(Block):
         return Packet.post_build(self, p, pay)
 
 
+#     I&M0
+class IM0Block(Block):
+    """Identification and Maintenance 0"""
+    fields_desc = [
+        BlockHeader,
+        ByteField("VendorIDHigh", 0x00),
+        ByteField("VendorIDLow", 0x00),
+        StrFixedLenField("OrderID", "", length=20),
+        StrFixedLenField("IMSerialNumber", "", length=16),
+        ShortField("IMHardwareRevision", 0),
+        StrFixedLenField("IMSWRevisionPrefix", "V", length=1),
+        ByteField("IMSWRevisionFunctionalEnhancement", 0),
+        ByteField("IMSWRevisionBugFix", 0),
+        ByteField("IMSWRevisionInternalChange", 0),
+        ShortField("IMRevisionCounter", 0),
+        ShortField("IMProfileID", 0),
+        ShortField("IMProfileSpecificType", 0),
+        ByteField("IMVersionMajor", 1),
+        ByteField("IMVersionMinor", 1),
+        ShortField("IMSupported", 0x0),
+    ]
+
+    block_type = 0x0020
+
+
+#     I&M1
+class IM1Block(Block):
+    """Identification and Maintenance 1"""
+    fields_desc = [
+        BlockHeader,
+        StrFixedLenField("IMTagFunction", "", length=32),
+        StrFixedLenField("IMTagLocation", "", length=22),
+    ]
+
+    block_type = 0x0021
+
+
+#     I&M2
+class IM2Block(Block):
+    """Identification and Maintenance 2"""
+    fields_desc = [
+        BlockHeader,
+        StrFixedLenField("IMDate", "", length=16),
+    ]
+
+    block_type = 0x0022
+
+
+#     I&M3
+class IM3Block(Block):
+    """Identification and Maintenance 3"""
+    fields_desc = [
+        BlockHeader,
+        StrFixedLenField("IMDescriptor", "", length=54),
+    ]
+
+    block_type = 0x0023
+
+
+#     I&M4
+class IM4Block(Block):
+    """Identification and Maintenance 4"""
+    fields_desc = [
+        BlockHeader,
+        StrFixedLenField("IMSignature", "", 54)
+    ]
+
+    block_type = 0x0024
+
+
 #     ARBlockRe{q,s}
 class ARBlockReq(Block):
     """Application relationship block request"""
@@ -852,11 +922,278 @@ class ExpectedSubmoduleBlockReq(Block):
         return None  # no response associated (should be modulediffblock)
 
 
+ALARM_CR_TYPE = {
+    0x0001: "AlarmCR",
+}
+
+ALARM_CR_TRANSPORT = {
+    0x0: "RTA_CLASS_1",
+    0x1: "RTA_CLASS_UDP"
+}
+
+
+class AlarmCRBlockReq(Block):
+    """Alarm CR block request"""
+    fields_desc = [
+        BlockHeader,
+        XShortEnumField("AlarmCRType", 1, ALARM_CR_TYPE),
+        ShortField("LT", 0x8892),
+        BitField("AlarmCRProperties_Priority", 0, 1),
+        BitEnumField("AlarmCRProperties_Transport", 0, 1, ALARM_CR_TRANSPORT),
+        BitField("AlarmCRProperties_Reserved1", 0, 22),
+        BitField("AlarmCRProperties_Reserved2", 0, 8),
+        ShortField("RTATimeoutFactor", 0x0001),
+        ShortField("RTARetries", 0x0003),
+        ShortField("LocalAlarmReference", 0x0003),
+        ShortField("MaxAlarmDataLength", 0x00C8),
+        ShortField("AlarmCRTagHeaderHigh", 0xC000),
+        ShortField("AlarmCRTagHeaderLow", 0xA000),
+    ]
+    # default block_type value
+    block_type = 0x0103
+
+    def post_build(self, p, pay):
+        # Set the LT based on transport
+        if self.AlarmCRProperties_Transport == 0x1:
+            p = p[:8] + struct.pack("!H", 0x0800) + p[10:]
+
+        return Block.post_build(self, p, pay)
+
+    def get_response(self):
+        """Generate the response block of this request.
+        Careful: it only sets the fields which can be set from the request
+        """
+        res = AlarmCRBlockRes()
+        for field in ["AlarmCRType", "LocalAlarmReference"]:
+            res.setfieldval(field, self.getfieldval(field))
+
+        res.block_type = self.block_type + 0x8000
+        return res
+
+
+class AlarmCRBlockRes(Block):
+    fields_desc = [
+        BlockHeader,
+        XShortEnumField("AlarmCRType", 1, ALARM_CR_TYPE),
+        ShortField("LocalAlarmReference", 0),
+        ShortField("MaxAlarmDataLength", 0)
+    ]
+    # default block_type value
+    block_type = 0x8103
+
+
+class AlarmItem(Packet):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        PacketField("load", "", Raw),
+    ]
+
+    def extract_padding(self, s):
+        return None, s  # No extra payload
+
+
+class MaintenanceItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        BlockHeader,
+        StrFixedLenField("padding", "", length=2),
+        XIntField("MaintenanceStatus", 0),
+    ]
+
+
+class DiagnosisItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        XShortField("ChannelNumber", 0),
+        XShortField("ChannelProperties", 0),
+        XShortField("ChannelErrorType", 0),
+        ConditionalField(
+            cond=lambda p: p.getfieldval("UserStructureIdentifier") in [
+                0x8002, 0x8003],
+            fld=XShortField("ExtChannelErrorType", 0)),
+        ConditionalField(
+            cond=lambda p: p.getfieldval("UserStructureIdentifier") in [
+                0x8002, 0x8003],
+            fld=XIntField("ExtChannelAddValue", 0)),
+        ConditionalField(
+            cond=lambda p: p.getfieldval("UserStructureIdentifier") == 0x8003,
+            fld=XIntField("QualifiedChannelQualifier", 0)),
+    ]
+
+
+class UploadRetrievalItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        BlockHeader,
+        StrFixedLenField("padding", "", length=2),
+        XIntField("URRecordIndex", 0),
+        XIntField("URRecordLength", 0),
+    ]
+
+
+class iParameterItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        BlockHeader,
+        StrFixedLenField("padding", "", length=2),
+        XIntField("iPar_Req_Header", 0),
+        XIntField("Max_Segm_Size", 0),
+        XIntField("Transfer_Index", 0),
+        XIntField("Total_iPar_Size", 0),
+    ]
+
+
+PE_OPERATIONAL_MODE = {
+    0x00: "PE_PowerOff",
+    0xF0: "PE_Operate",
+    0xFE: "PE_SleepModeWOL",
+    0xFF: "PE_ReadyToOperate",
+}
+PE_OPERATIONAL_MODE.update({i: "PE_EnergySavingMode_{}".format(i)
+                            for i in range(0x1, 0x20)})
+PE_OPERATIONAL_MODE.update({i: "Reserved" for i in range(0x20, 0xF0)})
+PE_OPERATIONAL_MODE.update({i: "Reserved" for i in range(0xF1, 0xFE)})
+
+
+class PE_AlarmItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        BlockHeader,
+        ByteEnumField("PE_OperationalMode", 0, PE_OPERATIONAL_MODE),
+    ]
+
+
+class RS_AlarmItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        XShortField("RS_AlarmInfo", 0),
+    ]
+
+
+class PRAL_AlarmItem(AlarmItem):
+    fields_desc = [
+        XShortField("UserStructureIdentifier", 0),
+        XShortField("ChannelNumber", 0),
+        XShortField("PRAL_ChannelProperties", 0),
+        XShortField("PRAL_Reason", 0),
+        XShortField("PRAL_ExtReason", 0),
+        StrLenField("PRAL_ReasonAddValue", "",
+                    length_from=lambda x:x.len - 10),
+    ]
+
+
+PNIO_RPC_ALARM_ASSOCIATION = {
+    "8000": DiagnosisItem,
+    "8002": DiagnosisItem,
+    "8003": DiagnosisItem,
+    "8100": MaintenanceItem,
+    "8200": UploadRetrievalItem,
+    "8201": iParameterItem,
+    "8300": RS_AlarmItem,
+    "8301": RS_AlarmItem,
+    "8302": RS_AlarmItem,
+    # "8303": RS_AlarmItem,
+    "8310": PE_AlarmItem,
+    "8320": PRAL_AlarmItem,
+}
+
+
+def _guess_alarm_payload(_pkt, *args, **kargs):
+    cls = AlarmItem
+
+    btype = bytes_hex(_pkt[:2]).decode("utf8")
+    if btype in PNIO_RPC_ALARM_ASSOCIATION:
+        cls = PNIO_RPC_ALARM_ASSOCIATION[btype]
+
+    return cls(_pkt, *args, **kargs)
+
+
+class AlarmNotificationPDU(Block):
+    fields_desc = [
+        # IEC-61158-6-10:2021, Table 513
+        BlockHeader,
+        ShortField("AlarmType", 0),
+        XIntField("API", 0),
+        ShortField("SlotNumber", 0),
+        ShortField("SubslotNumber", 0),
+        XIntField("ModuleIdentNumber", 0),
+        XIntField("SubmoduleIdentNUmber", 0),
+        XShortField("AlarmSpecifier", 0),
+        PacketListField("AlarmPayload", [], _guess_alarm_payload)
+    ]
+
+
+class AlarmNotification_High(AlarmNotificationPDU):
+    block_type = 0x0001
+
+
+class AlarmNotification_Low(AlarmNotificationPDU):
+    block_type = 0x0002
+
+
+PDU_TYPE_TYPE = {
+    0x01: "RTA_TYPE_DATA",
+    0x02: "RTA_TYPE_NACK",
+    0x03: "RTA_TYPE_ACK",
+    0x04: "RTA_TYPE_ERR",
+    0x05: "RTA_TYPE_FREQ",
+    0x06: "RTA_TYPE_FRSP",
+}
+PDU_TYPE_TYPE.update({i: "Reserved" for i in range(0x07, 0x10)})
+
+
+PDU_TYPE_VERSION = {
+    0x00: "Reserved",
+    0x01: "Version 1",
+    0x02: "Version 2",
+}
+PDU_TYPE_VERSION.update({i: "Reserved" for i in range(0x03, 0x10)})
+
+
+class PNIORealTimeAcyclicPDUHeader(Packet):
+    fields_desc = [
+        # IEC-61158-6-10:2021, Table 241
+        ShortField("AlarmDstEndpoint", 0),
+        ShortField("AlarmSrcEndpoint", 0),
+        BitEnumField("PDUTypeType", 0, 4, PDU_TYPE_TYPE),
+        BitEnumField("PDUTypeVersion", 0, 4, PDU_TYPE_VERSION),
+        BitField("AddFlags", 0, 8),
+        XShortField("SendSeqNum", 0),
+        XShortField("AckSeqNum", 0),
+        XShortField("VarPartLen", 0),
+    ]
+
+    def __new__(cls, name, bases, dct):
+        raise NotImplementedError()
+
+
+class Alarm_Low(Packet):
+    fields_desc = [
+        PNIORealTimeAcyclicPDUHeader,
+        PacketField("RTA-SDU", None, AlarmNotification_Low),
+    ]
+
+
+class Alarm_High(Packet):
+    fields_desc = [
+        PNIORealTimeAcyclicPDUHeader,
+        PacketField("RTA-SDU", None, AlarmNotification_High),
+    ]
+
+
 # PROFINET IO DCE/RPC PDU
 PNIO_RPC_BLOCK_ASSOCIATION = {
+    # I&M Records
+    "0020": IM0Block,
+    "0021": IM1Block,
+    "0022": IM2Block,
+    "0023": IM3Block,
+    "0024": IM4Block,
+
     # requests
     "0101": ARBlockReq,
     "0102": IOCRBlockReq,
+    "0103": AlarmCRBlockReq,
     "0104": ExpectedSubmoduleBlockReq,
     "0110": IODControlReq,
     "0111": IODControlReq,
@@ -870,6 +1207,7 @@ PNIO_RPC_BLOCK_ASSOCIATION = {
     # responses
     "8101": ARBlockRes,
     "8102": IOCRBlockRes,
+    "8103": AlarmCRBlockRes,
     "8110": IODControlRes,
     "8111": IODControlRes,
     "8112": IODControlRes,

@@ -27,8 +27,8 @@ __all__ = [
     'DefaultDict',
     'Dict',
     'Generic',
-    'Iterable',
     'IO',
+    'Iterable',
     'Iterable',
     'Iterator',
     'List',
@@ -99,7 +99,7 @@ def _FakeType(name, cls=object):
             # type: (str) -> None
             self.name = name
 
-        # make the objects subscriptable indefinetly
+        # make the objects subscriptable indefinitely
         def __getitem__(self, item):  # type: ignore
             return cls
 
@@ -124,9 +124,9 @@ if not FAKE_TYPING:
         DefaultDict,
         Dict,
         Generic,
+        IO,
         Iterable,
         Iterator,
-        IO,
         List,
         NewType,
         NoReturn,
@@ -154,17 +154,17 @@ else:
                             collections.defaultdict)
     Dict = _FakeType("Dict", dict)  # type: ignore
     Generic = _FakeType("Generic")
+    IO = _FakeType("IO")  # type: ignore
     Iterable = _FakeType("Iterable")  # type: ignore
     Iterator = _FakeType("Iterator")  # type: ignore
-    IO = _FakeType("IO")  # type: ignore
     List = _FakeType("List", list)  # type: ignore
     NewType = _FakeType("NewType")
     NoReturn = _FakeType("NoReturn")  # type: ignore
     Optional = _FakeType("Optional")
     Pattern = _FakeType("Pattern")  # type: ignore
     Sequence = _FakeType("Sequence")  # type: ignore
-    Set = _FakeType("Set", set)  # type: ignore
     Sequence = _FakeType("Sequence", list)  # type: ignore
+    Set = _FakeType("Set", set)  # type: ignore
     Tuple = _FakeType("Tuple")
     Type = _FakeType("Type", type)
     TypeVar = _FakeType("TypeVar")  # type: ignore
@@ -327,6 +327,29 @@ def hex_bytes(x):
     # type: (AnyStr) -> bytes
     """De-hexify a str or a byte object"""
     return binascii.a2b_hex(bytes_encode(x))
+
+
+if six.PY2:
+    def int_bytes(x, size):
+        # type: (int, int) -> bytes
+        """Convert an int to an arbitrary sized bytes string"""
+        _hx = hex(x)[2:].strip("L")
+        return binascii.unhexlify("0" * (size * 2 - len(_hx)) + _hx)
+
+    def bytes_int(x):
+        # type: (bytes) -> int
+        """Convert an arbitrary sized bytes string to an int"""
+        return int(x.encode('hex'), 16)
+else:
+    def int_bytes(x, size):
+        # type: (int, int) -> bytes
+        """Convert an int to an arbitrary sized bytes string"""
+        return x.to_bytes(size, byteorder='big')
+
+    def bytes_int(x):
+        # type: (bytes) -> int
+        """Convert an arbitrary sized bytes string to an int"""
+        return int.from_bytes(x, "big")
 
 
 def base64_bytes(x):
