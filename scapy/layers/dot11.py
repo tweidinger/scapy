@@ -68,7 +68,7 @@ from scapy.ansmachine import AnsweringMachine
 from scapy.plist import PacketList
 from scapy.layers.l2 import Ether, LLC, MACField
 from scapy.layers.inet import IP, TCP
-from scapy.error import warning, log_loading
+from scapy.error import Scapy_Exception, warning, log_loading
 from scapy.sendrecv import sniff, sendp
 
 
@@ -1132,6 +1132,7 @@ _dot11_info_elts_ids = {
     32: "Power Constraint",
     33: "Power Capability",
     36: "Supported Channels",
+    38: "Measurement Request",
     42: "ERP",
     45: "HT Capabilities",
     46: "QoS Capability",
@@ -1142,6 +1143,7 @@ _dot11_info_elts_ids = {
     107: "Interworking",
     127: "Extendend Capabilities",
     191: "VHT Capabilities",
+    206: "FTM Parameter",
     221: "Vendor Specific",
 }
 
@@ -1928,6 +1930,7 @@ format_and_bandwith = {
     32 - 63: "Reserved",
 }
 
+
 measurement_type = {8: "LCI", 11: "Location-Civic", 16: "Fine-Timing-Measurement-Range"}
 
 location_subject = {
@@ -1975,52 +1978,220 @@ class Dot11FTMMeasurementRequestFrame(Dot11PublicAction):
     name = "Optional Fine Timing measurement request frame parts"
     fields_desc = [
         # Measurement Request Header 1
-        ByteField("element_id1", 0),
-        ByteField("length1", 0),
-        ByteField("token1", 0),
-        ByteField("request_mode1", 0),
-        ByteEnumField("measurement_type1", 0, measurement_type),
-        # LCI Request
-        ByteEnumField("LCI-Location-Subject", 0, location_subject),
+        ConditionalField(
+            ByteField("element_id1", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("length1", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("token1", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("request_mode1", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteEnumField("measurement_type1", 0, measurement_type),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            # LCI Request
+            ByteEnumField("LCI_Location_Subject", 0, location_subject),
+            lambda pkt: pkt.has_lci,
+        ),
         # Measurement Request Header 2
-        ByteField("element_id2", 0),
-        ByteField("length2", 0),
-        ByteField("token2", 0),
-        ByteField("request_mode2", 0),
-        ByteEnumField("measurement_type1", 0, measurement_type),
+        ConditionalField(
+            ByteField("element_id2", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("length2", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("token2", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteField("request_mode2", 0),
+            lambda pkt: pkt.has_lci,
+        ),
+        ConditionalField(
+            ByteEnumField("measurement_type2", 0, measurement_type),
+            lambda pkt: pkt.has_lci,
+        ),
         # Location Civic Request Field
-        ByteEnumField("Civic-Location-Subject", 0, location_subject),
-        ByteEnumField("Civic-Location-Type", 0, civic_location_type),
-        ByteEnumField(
-            "Location-Service-Interval-Units", 0, civic_location_interval_units
+        ConditionalField(
+            ByteEnumField("Civic_Location_Subject", 0, location_subject),
+            lambda pkt: pkt.has_location_civic,
         ),
-        BitField("Location-Service-Interval", 0, 16, tot_size=-2, end_tot_size=-2),
+        ConditionalField(
+            ByteEnumField("Civic_Location_Type", 0, civic_location_type),
+            lambda pkt: pkt.has_location_civic,
+        ),
+        ConditionalField(
+            ByteEnumField(
+                "Location_Service_Interval_Units",
+                0,
+                civic_location_interval_units,
+            ),
+            lambda pkt: pkt.has_location_civic,
+        ),
+        ConditionalField(
+            BitField("Location_Service_Interval", 0, 16, tot_size=-2, end_tot_size=-2),
+            lambda pkt: pkt.has_location_civic,
+        ),
         # FTM Header
-        ByteField("Parameters-Element-ID", 0),
-        ByteField("Parameters-Length", 0),
-        # FTM Parameters Subset 1
-        BitEnumField(
-            "Burst-Duration", 0, 4, burst_duration_field_encoding, tot_size=-2
+        ConditionalField(
+            ByteField("Parameters_Element_ID", 0),
+            lambda pkt: pkt.has_ftm_param,
         ),
-        BitField("Number-of-Bursts-Exponent", 0, 4),
-        BitField("Reserved1", 0, 1),
-        BitField("Value", 0, 5),
-        BitEnumField("Status-Indication", 0, 2, ftm_status_indication, end_tot_size=-2),
+        ConditionalField(
+            ByteField("Parameters_Length", 0),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        # FTM Parameters Subset 1
+        ConditionalField(
+            BitEnumField(
+                "Burst_Duration", 0, 4, burst_duration_field_encoding, tot_size=-2
+            ),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Number_of_Bursts_Exponent", 0, 4),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Reserved1", 0, 1),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Value", 0, 5),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitEnumField(
+                "Status_Indication", 0, 2, ftm_status_indication, end_tot_size=-2
+            ),
+            lambda pkt: pkt.has_ftm_param,
+        ),
         # FTM Parameters Subset 2
-        BitField("FTMS-per-Burst", 0, 5, tot_size=-4),
-        BitField("ASAP", 0, 1),
-        BitField("ASAP-Capable", 0, 1),
-        BitField("Partial-TSF-Timer-No-Preference", 0, 1),
-        BitField("Partial-TSF-Timer", 0, 16),
-        BitField("Min-Delta-FTM", 0, 8, end_tot_size=-4),
+        ConditionalField(
+            BitField("FTMS_per_Burst", 0, 5, tot_size=-4),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("ASAP", 0, 1),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("ASAP_Capable", 0, 1),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Partial_TSF_Timer_No_Preference", 0, 1),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Partial_TSF_Timer", 0, 16),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Min_Delta_FTM", 0, 8, end_tot_size=-4),
+            lambda pkt: pkt.has_ftm_param,
+        ),
         # FTM Parameters Subset 3
-        BitField("Burst-Period", 0, 16, tot_size=-3),
-        BitEnumField("Format-and-Bandwith", 0, 6, format_and_bandwith),
-        BitField("Reserved2", 0, 2, end_tot_size=-3),
+        ConditionalField(
+            BitField("Burst_Period", 0, 16, tot_size=-3),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitEnumField("Format_and_Bandwith", 0, 6, format_and_bandwith),
+            lambda pkt: pkt.has_ftm_param,
+        ),
+        ConditionalField(
+            BitField("Reserved2", 0, 2, end_tot_size=-3),
+            lambda pkt: pkt.has_ftm_param,
+        ),
         # Vendor Specific
-        ByteField("Vendor-Element-ID", 0),
-        ByteField("Vendor-Length", 0),
+        ConditionalField(
+            ByteField("Vendor_Element_ID", 0),
+            lambda pkt: pkt.has_vendor,
+        ),
+        ConditionalField(
+            ByteField("Vendor_Length", 0),
+            lambda pkt: pkt.has_vendor,
+        ),
     ]
+
+    def validate_element(self, name, length):
+        if name == "FTM Parameter" and (length != 9):
+            raise Scapy_Exception("FTM parameter size is invalid")
+
+    def pre_dissect(self, s):
+        """
+        Check which optional parts are present in the request frame.
+        This parses the individual sub frames and tags the existing ones.
+
+        Sets attributes to use in ConditionalField check.
+        """
+        self.__setattr__("has_lci", False)
+        self.__setattr__("has_location_civic", False)
+        self.__setattr__("has_ftm_param", False)
+        self.__setattr__("has_vendor", False)
+
+        i = 0
+        curr = 0
+        while (curr + 2) < len(s):
+            part_id = s[curr]
+            part_len = s[curr + 1]
+
+            # TODO: implement proper garbage data check
+            # if (part_len < 3) or (curr + part_len < len(s)):
+            #     # skip parts without type (vendor data or garbage)
+            #     print("skip garbage")
+            #     curr += part_len + 2
+            #     i += 1
+            #     continue
+
+            try:
+                dot11_element = _dot11_info_elts_ids[part_id]
+                self.validate_element(dot11_element, part_len)
+            except KeyError:
+                raise Scapy_Exception("dot11 part ID not compatible with FTM request")
+
+            if dot11_element == "Measurement Request":
+                part_type = measurement_type[s[curr + 4]]
+                if part_type == "Location-Civic":
+                    self.__setattr__("has_location_civic", True)
+                    curr += part_len + 2
+                    i += 1
+                    continue
+                elif part_type == "LCI":
+                    self.__setattr__("has_lci", True)
+                    curr += part_len + 2
+                    i += 1
+                    continue
+                else:
+                    raise Scapy_Exception("dot11 unsupported measurement type")
+            elif dot11_element == "FTM Parameter":
+                self.__setattr__("has_ftm_param", True)
+                curr += part_len + 2
+                i += 1
+                continue
+            elif dot11_element == "Vendor Specific":
+                self.__setattr__("has_vendor", True)
+                curr += part_len + 2
+                i += 1
+                continue
+            else:
+                raise NotImplementedError("dot11_element type not implemented")
+
+        return s
 
 
 #    # TODO: implement this as a field
