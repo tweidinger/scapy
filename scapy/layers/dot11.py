@@ -2139,24 +2139,21 @@ class Dot11FTMMeasurementRequestFrame(Dot11PublicAction):
 
         Sets attributes to use in ConditionalField check.
         """
-        self.__setattr__("has_lci", False)
-        self.__setattr__("has_location_civic", False)
-        self.__setattr__("has_ftm_param", False)
-        self.__setattr__("has_vendor", False)
+        self.has_lci = False
+        self.has_location_civic = False
+        self.has_ftm_param = False
+        self.has_vendor = False
 
-        i = 0
         curr = 0
         while (curr + 2) < len(s):
             part_id = s[curr]
             part_len = s[curr + 1]
 
-            # TODO: implement proper garbage data check
-            # if (part_len < 3) or (curr + part_len < len(s)):
-            #     # skip parts without type (vendor data or garbage)
-            #     print("skip garbage")
-            #     curr += part_len + 2
-            #     i += 1
-            #     continue
+            if (part_len < 3) or (curr + 2 + part_len > len(s)):
+                # skip parts without type (vendor data or garbage)
+                print("skip garbage")
+                curr += part_len + 2
+                continue
 
             try:
                 dot11_element = _dot11_info_elts_ids[part_id]
@@ -2167,26 +2164,22 @@ class Dot11FTMMeasurementRequestFrame(Dot11PublicAction):
             if dot11_element == "Measurement Request":
                 part_type = measurement_type[s[curr + 4]]
                 if part_type == "Location-Civic":
-                    self.__setattr__("has_location_civic", True)
+                    self.has_location_civic = True
                     curr += part_len + 2
-                    i += 1
                     continue
                 elif part_type == "LCI":
-                    self.__setattr__("has_lci", True)
+                    self.has_lci = True
                     curr += part_len + 2
-                    i += 1
                     continue
                 else:
                     raise Scapy_Exception("dot11 unsupported measurement type")
             elif dot11_element == "FTM Parameter":
-                self.__setattr__("has_ftm_param", True)
+                self.has_ftm_param = True
                 curr += part_len + 2
-                i += 1
                 continue
             elif dot11_element == "Vendor Specific":
-                self.__setattr__("has_vendor", True)
+                self.has_vendor = True
                 curr += part_len + 2
-                i += 1
                 continue
             else:
                 raise NotImplementedError("dot11_element type not implemented")
